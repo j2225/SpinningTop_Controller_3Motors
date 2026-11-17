@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>3Motor BLE Controller</title>
+  <meta name="description" content="XIAO ESP32-C3 BLE 3モーターコントローラー。DCモーター2基とサーボモーターをブラウザからリアルタイム制御。" />
+  <style>
+    /* ===================== RESET & BASE ===================== */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg-primary:    #0d0f14;
+      --bg-secondary:  #161a24;
+      --bg-card:       #1e2335;
+      --bg-track:      #111420;
+      --accent-blue:   #4f8ef7;
+      --accent-cyan:   #00d4ff;
+      --accent-green:  #00e676;
+      --accent-orange: #ff9800;
+      --accent-red:    #ff3d57;
+      --accent-purple: #bb86fc;
+      --text-primary:  #e8eaf6;
+      --text-secondary:#8891b4;
+      --text-muted:    #4a5177;
+      --glow-blue:     rgba(79, 142, 247, 0.4);
+      --glow-green:    rgba(0, 230, 118, 0.4);
+      --glow-red:      rgba(255, 61, 87, 0.5);
+      --border-dim:    rgba(255,255,255,0.07);
+      --border-bright: rgba(79,142,247,0.4);
+      --track-w: 54px;
+      --thumb-h: 60px;
+    }
+
+    html, body {
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      touch-action: none;
+      overscroll-behavior: none;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* ===================== LAYOUT ===================== */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      height: 100dvh;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 0 12px;
+    }
+
+    /* ===================== HEADER ===================== */
+    #header {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 4px;
+      border-bottom: 1px solid var(--border-dim);
+      gap: 10px;
+    }
+
+    #header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .logo-title {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--accent-cyan);
+      text-transform: uppercase;
+    }
+
+    .logo-sub {
+      font-size: 10px;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+    }
+
+    /* Status indicator */
+    #status-wrap {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    #status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent-red);
+      box-shadow: 0 0 8px var(--glow-red);
+      transition: background 0.4s, box-shadow 0.4s;
+      flex-shrink: 0;
+    }
+
+    #status-dot.connected {
+      background: var(--accent-green);
+      box-shadow: 0 0 10px var(--glow-green);
+      animation: pulse-dot 2s infinite;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    #status-text {
+      font-size: 11px;
+      color: var(--text-secondary);
+      min-width: 46px;
+    }
+
+    /* Connect button */
+    #btn-connect {
+      padding: 7px 16px;
+      border-radius: 20px;
+      border: 1.5px solid var(--accent-blue);
+      background: transparent;
+      color: var(--accent-blue);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+
+    #btn-connect:hover {
+      background: var(--accent-blue);
+      color: #fff;
+      box-shadow: 0 0 16px var(--glow-blue);
+    }
+
+    #btn-connect.connected {
+      border-color: var(--accent-red);
+      color: var(--accent-red);
+    }
+
+    #btn-connect.connected:hover {
+      background: var(--accent-red);
+      color: #fff;
+      box-shadow: 0 0 16px var(--glow-red);
+    }
+
+    /* ===================== LEVERS AREA ===================== */
+    #levers-area {
+      flex: 1;
+      display: flex;
+      align-items: stretch;
+      justify-content: space-around;
+      gap: 8px;
+      padding: 10px 0;
+      min-height: 0;
+    }
+
+    .lever-col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .lever-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      text-align: center;
+    }
+
+    /* Value badge */
+    .lever-value {
+      font-size: 15px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      text-align: center;
+      transition: color 0.15s;
+      min-width: 72px;
+      padding: 3px 8px;
+      border-radius: 8px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-dim);
+    }
+
+    /* ---- Track & Thumb ---- */
+    .lever-track-wrap {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      width: 100%;
+    }
+
+    .lever-track {
+      position: relative;
+      width: var(--track-w);
+      flex: 1;
+      max-height: 500px;
+      border-radius: 27px;
+      background: var(--bg-track);
+      border: 1.5px solid var(--border-dim);
+      overflow: visible;
+      cursor: pointer;
+      touch-action: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Filled bar behind thumb */
+    .lever-fill {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 8px;
+      border-radius: 4px;
+      transition: none;
+      pointer-events: none;
+    }
+
+    /* Center line */
+    .lever-center-line {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: calc(100% + 20px);
+      height: 1px;
+      background: rgba(255,255,255,0.12);
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .lever-center-line::before,
+    .lever-center-line::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.18);
+    }
+
+    .lever-center-line::before { left: 0; }
+    .lever-center-line::after  { right: 0; }
+
+    /* Tick marks */
+    .lever-ticks {
+      position: absolute;
+      left: 0; right: 0; top: 0; bottom: 0;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .tick {
+      position: absolute;
+      right: 100%;
+      margin-right: 4px;
+      height: 1px;
+      background: rgba(255,255,255,0.08);
+      width: 8px;
+      transform: translateY(-0.5px);
+    }
+
+    .tick.major {
+      width: 12px;
+      background: rgba(255,255,255,0.18);
+    }
+
+    /* Thumb */
+    .lever-thumb {
+      position: absolute;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: calc(var(--track-w) - 8px);
+      height: var(--thumb-h);
+      border-radius: 14px;
+      background: linear-gradient(145deg, #2a3050, #1e2640);
+      border: 2px solid rgba(255,255,255,0.15);
+      cursor: grab;
+      touch-action: none;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 3px;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05);
+    }
+
+    .lever-thumb:active, .lever-thumb.dragging {
+      cursor: grabbing;
+      border-color: var(--accent-cyan);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.6), 0 0 16px rgba(0,212,255,0.3);
+    }
+
+    .thumb-grip {
+      width: 60%;
+      height: 2px;
+      border-radius: 2px;
+      background: rgba(255,255,255,0.25);
+    }
+
+    /* Motor 1 (blue) */
+    .m1 .lever-thumb { border-color: rgba(79,142,247,0.4); }
+    .m1 .lever-fill  { background: var(--accent-blue); opacity: 0.6; }
+    .m1 .lever-value { color: var(--accent-blue); }
+
+    /* Motor 2 (orange) */
+    .m2 .lever-thumb { border-color: rgba(255,152,0,0.4); }
+    .m2 .lever-fill  { background: var(--accent-orange); opacity: 0.6; }
+    .m2 .lever-value { color: var(--accent-orange); }
+
+    /* Servo (purple) */
+    .sv .lever-thumb { border-color: rgba(187,134,252,0.4); }
+    .sv .lever-fill  { background: var(--accent-purple); opacity: 0.6; }
+    .sv .lever-value { color: var(--accent-purple); }
+
+    /* ===================== SERVO EXTRAS ===================== */
+    .servo-extras {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+    }
+
+    #btn-servo-reset {
+      width: 100%;
+      max-width: 90px;
+      padding: 6px 0;
+      border-radius: 10px;
+      border: 1.5px solid rgba(187,134,252,0.5);
+      background: rgba(187,134,252,0.08);
+      color: var(--accent-purple);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      letter-spacing: 0.03em;
+    }
+
+    #btn-servo-reset:hover {
+      background: rgba(187,134,252,0.2);
+      box-shadow: 0 0 10px rgba(187,134,252,0.3);
+    }
+
+    /* Toggle switch */
+    .toggle-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .toggle-label {
+      font-size: 9px;
+      color: var(--text-muted);
+      text-align: center;
+      letter-spacing: 0.03em;
+      max-width: 90px;
+      line-height: 1.3;
+    }
+
+    .toggle-switch {
+      position: relative;
+      width: 40px;
+      height: 22px;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: var(--bg-track);
+      border: 1.5px solid var(--border-dim);
+      border-radius: 11px;
+      transition: all 0.25s;
+    }
+
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 15px;
+      height: 15px;
+      left: 2px;
+      top: 50%;
+      transform: translateY(-50%);
+      border-radius: 50%;
+      background: var(--text-muted);
+      transition: all 0.25s;
+    }
+
+    input:checked + .toggle-slider {
+      background: rgba(187,134,252,0.2);
+      border-color: rgba(187,134,252,0.6);
+    }
+
+    input:checked + .toggle-slider::before {
+      left: calc(100% - 17px);
+      background: var(--accent-purple);
+      box-shadow: 0 0 6px rgba(187,134,252,0.5);
+    }
+
+    /* ===================== FOOTER ===================== */
+    #footer {
+      flex-shrink: 0;
+      padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      border-top: 1px solid var(--border-dim);
+    }
+
+    /* Emergency stop */
+    #btn-estop {
+      width: 100%;
+      max-width: 340px;
+      padding: 12px 0;
+      border-radius: 14px;
+      border: 2px solid var(--accent-red);
+      background: rgba(255,61,87,0.1);
+      color: var(--accent-red);
+      font-size: 15px;
+      font-weight: 800;
+      cursor: pointer;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      transition: all 0.15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    #btn-estop:hover, #btn-estop:active {
+      background: var(--accent-red);
+      color: #fff;
+      box-shadow: 0 0 24px var(--glow-red), 0 0 60px rgba(255,61,87,0.2);
+    }
+
+    #btn-estop svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    /* Sent data display */
+    #last-sent {
+      font-size: 10px;
+      color: var(--text-muted);
+      font-family: 'Courier New', monospace;
+      letter-spacing: 0.05em;
+    }
+
+    /* ===================== TOAST ===================== */
+    #toast {
+      position: fixed;
+      bottom: 70px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--bg-card);
+      border: 1px solid var(--border-dim);
+      color: var(--text-secondary);
+      padding: 8px 20px;
+      border-radius: 20px;
+      font-size: 12px;
+      opacity: 0;
+      transition: opacity 0.3s, transform 0.3s;
+      pointer-events: none;
+      white-space: nowrap;
+      z-index: 999;
+    }
+
+    #toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* ===================== SCAN ANIMATION ===================== */
+    @keyframes scan-line {
+      0%   { top: 0%; }
+      100% { top: 100%; }
+    }
+
+    .scanning #status-dot {
+      animation: pulse-dot 0.5s infinite !important;
+      background: var(--accent-orange) !important;
+      box-shadow: 0 0 10px rgba(255,152,0,0.5) !important;
+    }
+
+    /* ===================== RESPONSIVE ===================== */
+    @media (max-width: 360px) {
+      :root {
+        --track-w: 44px;
+        --thumb-h: 50px;
+      }
+      .lever-value { font-size: 13px; }
+      .lever-label { font-size: 10px; }
+    }
+
+    @media (min-width: 480px) {
+      :root {
+        --track-w: 64px;
+        --thumb-h: 68px;
+      }
+      #levers-area { gap: 16px; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ===== HEADER ===== -->
+  <header id="header">
+    <div id="header-left">
+      <div class="logo">
+        <span class="logo-title">3Motor BLE</span>
+        <span class="logo-sub">XIAO ESP32-C3</span>
+      </div>
+    </div>
+    <div id="status-wrap">
+      <div id="status-dot"></div>
+      <span id="status-text">未接続</span>
+    </div>
+    <button id="btn-connect">接続</button>
+  </header>
+
+  <!-- ===== LEVERS ===== -->
+  <main id="levers-area">
+
+    <!-- M1 -->
+    <div class="lever-col m1">
+      <div class="lever-label">Motor 1</div>
+      <div class="lever-value" id="val-m1">M1: 0</div>
+      <div class="lever-track-wrap">
+        <div class="lever-track" id="track-m1" data-channel="m1">
+          <div class="lever-ticks" id="ticks-m1"></div>
+          <div class="lever-center-line"></div>
+          <div class="lever-fill" id="fill-m1"></div>
+          <div class="lever-thumb" id="thumb-m1">
+            <div class="thumb-grip"></div>
+            <div class="thumb-grip"></div>
+            <div class="thumb-grip"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- M2 -->
+    <div class="lever-col m2">
+      <div class="lever-label">Motor 2</div>
+      <div class="lever-value" id="val-m2">M2: 0</div>
+      <div class="lever-track-wrap">
+        <div class="lever-track" id="track-m2" data-channel="m2">
+          <div class="lever-ticks" id="ticks-m2"></div>
+          <div class="lever-center-line"></div>
+          <div class="lever-fill" id="fill-m2"></div>
+          <div class="lever-thumb" id="thumb-m2">
+            <div class="thumb-grip"></div>
+            <div class="thumb-grip"></div>
+            <div class="thumb-grip"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SERVO -->
+    <div class="lever-col sv">
+      <div class="lever-label">Servo</div>
+      <div class="lever-value" id="val-sv">90°</div>
+      <div class="lever-track-wrap">
+        <div class="lever-track" id="track-sv" data-channel="sv">
+          <div class="lever-ticks" id="ticks-sv"></div>
+          <div class="lever-center-line"></div>
+          <div class="lever-fill" id="fill-sv"></div>
+          <div class="lever-thumb" id="thumb-sv">
+            <div class="thumb-grip"></div>
+            <div class="thumb-grip"></div>
+            <div class="thumb-grip"></div>
+          </div>
+        </div>
+      </div>
+      <div class="servo-extras">
+        <button id="btn-servo-reset">中央 (90°)</button>
+        <div class="toggle-wrap">
+          <label class="toggle-switch" for="toggle-servo-return">
+            <input type="checkbox" id="toggle-servo-return" />
+            <span class="toggle-slider"></span>
+          </label>
+          <span class="toggle-label">離したら<br>90°に戻す</span>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ===== FOOTER ===== -->
+  <footer id="footer">
+    <button id="btn-estop">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+      </svg>
+      緊急停止 ALL STOP
+    </button>
+    <div id="last-sent">— 送信待機中 —</div>
+  </footer>
+
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+"use strict";
+// =====================================================================
+//  BLE CONFIGURATION
+// =====================================================================
+const SERVICE_UUID  = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const RX_CHAR_UUID  = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+const DEVICE_NAME   = 'XIAO_3Motor_Controller';
+
+// =====================================================================
+//  STATE
+// =====================================================================
+let bleDevice    = null;
+let bleServer    = null;
+let rxChar       = null;
+let isConnected  = false;
+
+let valM1 = 0;   // -255 ~ 255
+let valM2 = 0;   // -255 ~ 255
+let valSv = 90;  // 0 ~ 180
+
+let isSending    = false;
+let pendingSend  = false;
+let lastSentStr  = '';
+const THROTTLE_MS = 40;
+
+// =====================================================================
+//  DOM REFS
+// =====================================================================
+const $  = id => document.getElementById(id);
+const btnConnect    = $('btn-connect');
+const statusDot     = $('status-dot');
+const statusText    = $('status-text');
+const btnEstop      = $('btn-estop');
+const btnServoReset = $('btn-servo-reset');
+const toggleReturn  = $('toggle-servo-return');
+const lastSentEl    = $('last-sent');
+const toast         = $('toast');
+
+// Track elements
+const tracks = {
+  m1: { track: $('track-m1'), thumb: $('thumb-m1'), fill: $('fill-m1'), valEl: $('val-m1'), ticks: $('ticks-m1') },
+  m2: { track: $('track-m2'), thumb: $('thumb-m2'), fill: $('fill-m2'), valEl: $('val-m2'), ticks: $('ticks-m2') },
+  sv: { track: $('track-sv'), thumb: $('thumb-sv'), fill: $('fill-sv'), valEl: $('val-sv'), ticks: $('ticks-sv') },
+};
+
+// =====================================================================
+//  ENCODER
+// =====================================================================
+const enc = new TextEncoder();
+
+// =====================================================================
+//  TOAST
+// =====================================================================
+let toastTimer = null;
+function showToast(msg, duration = 2500) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), duration);
+}
+
+// =====================================================================
+//  BLE SEND  (throttled, with guaranteed final send)
+// =====================================================================
+let throttleTimer = null;
+
+async function sendCommand(str, force = false) {
+  if (!isConnected || !rxChar) return;
+  if (str === lastSentStr && !force) return;
+
+  if (isSending) {
+    // Queue the latest value; it will be flushed after current send
+    pendingSend = true;
+    lastSentStr = str;
+    return;
+  }
+
+  isSending = true;
+  try {
+    const data = enc.encode(str);
+    if (rxChar.writeValueWithoutResponse) {
+      await rxChar.writeValueWithoutResponse(data);
+    } else {
+      await rxChar.writeValue(data);
+    }
+    lastSentStr = str;
+    lastSentEl.textContent = '送信: ' + str.replace('\n', '\\n');
+  } catch (e) {
+    // Swallow GATT in-progress errors silently; just retry next cycle
+    if (!e.message || !e.message.includes('GATT operation already in progress')) {
+      console.warn('BLE write error:', e.message);
+    }
+  } finally {
+    isSending = false;
+    if (pendingSend) {
+      pendingSend = false;
+      // Schedule flush after short delay
+      setTimeout(() => sendCurrent(), THROTTLE_MS);
+    }
+  }
+}
+
+function buildCmd() {
+  return `${valM1},${valM2},${valSv}\n`;
+}
+
+function sendCurrent(force = false) {
+  sendCommand(buildCmd(), force);
+}
+
+// Throttled send – called on drag; final send on release (never throttled)
+function throttledSend() {
+  clearTimeout(throttleTimer);
+  throttleTimer = setTimeout(() => sendCurrent(), THROTTLE_MS);
+}
+
+// =====================================================================
+//  LEVER RENDERING
+// =====================================================================
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function updateLever(ch) {
+  const { track, thumb, fill, valEl } = tracks[ch];
+  const rect   = track.getBoundingClientRect();
+  const H      = rect.height;
+  const thumbH = thumb.offsetHeight;
+  const margin = thumbH / 2;
+  const usable = H - thumbH;
+
+  let norm; // 0 (top) → 1 (bottom)
+  let raw;
+
+  if (ch === 'sv') {
+    raw  = valSv;
+    norm = 1 - (raw - 0) / 180;   // 180 at top → norm=0, 0 at bottom → norm=1
+  } else {
+    raw  = ch === 'm1' ? valM1 : valM2;
+    norm = 1 - (raw + 255) / 510; // 255 at top → norm=0, -255 → norm=1
+  }
+
+  norm = Math.max(0, Math.min(1, norm));
+  const thumbY = margin + norm * usable;
+  thumb.style.top = thumbY + 'px';
+
+  // Fill bar (from center to thumb)
+  const centerY = H / 2;
+  if (ch === 'sv') {
+    // Fill from bottom to thumb
+    const fillH = H - thumbY;
+    fill.style.top    = thumbY + 'px';
+    fill.style.height = Math.max(0, fillH) + 'px';
+  } else {
+    if (thumbY < centerY) {
+      fill.style.top    = thumbY + 'px';
+      fill.style.height = (centerY - thumbY) + 'px';
+    } else {
+      fill.style.top    = centerY + 'px';
+      fill.style.height = (thumbY - centerY) + 'px';
+    }
+  }
+
+  // Label
+  if (ch === 'm1') valEl.textContent = `M1: ${raw}`;
+  else if (ch === 'm2') valEl.textContent = `M2: ${raw}`;
+  else valEl.textContent = `${raw}°`;
+}
+
+// =====================================================================
+//  TICK MARKS
+// =====================================================================
+function buildTicks(ch) {
+  const el = tracks[ch].ticks;
+  el.innerHTML = '';
+  const count = ch === 'sv' ? 9 : 10; // half steps each side
+  for (let i = 0; i <= count; i++) {
+    const pct  = (i / count) * 100;
+    const tick = document.createElement('div');
+    tick.className = 'tick' + (i === 0 || i === count || i === count / 2 ? ' major' : '');
+    tick.style.top = pct + '%';
+    el.appendChild(tick);
+  }
+}
+
+// =====================================================================
+//  DRAG HANDLERS  (Pointer Events – multi-touch safe)
+// =====================================================================
+// Map: pointerId → channel
+const activePointers = {};
+
+function getValueFromY(ch, clientY) {
+  const rect  = tracks[ch].track.getBoundingClientRect();
+  const H     = rect.height;
+  const thumbH = tracks[ch].thumb.offsetHeight;
+  const margin = thumbH / 2;
+  const usable = H - thumbH;
+
+  const relY   = clientY - rect.top;
+  const clamped = Math.max(margin, Math.min(H - margin, relY));
+  const norm   = (clamped - margin) / usable; // 0=top, 1=bottom
+
+  if (ch === 'sv') {
+    return Math.round((1 - norm) * 180);
+  } else {
+    return Math.round((1 - norm) * 510 - 255);
+  }
+}
+
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+function onPointerDown(e) {
+  const ch = e.currentTarget.dataset.channel;
+  if (!ch) return;
+  e.preventDefault();
+  e.currentTarget.setPointerCapture(e.pointerId);
+  activePointers[e.pointerId] = ch;
+  tracks[ch].thumb.classList.add('dragging');
+  applyDrag(ch, e.clientY);
+}
+
+function onPointerMove(e) {
+  const ch = activePointers[e.pointerId];
+  if (!ch) return;
+  e.preventDefault();
+  applyDrag(ch, e.clientY);
+}
+
+function onPointerUp(e) {
+  const ch = activePointers[e.pointerId];
+  if (!ch) return;
+  delete activePointers[e.pointerId];
+  tracks[ch].thumb.classList.remove('dragging');
+
+  // Auto-return for M1, M2
+  if (ch === 'm1') { valM1 = 0; }
+  else if (ch === 'm2') { valM2 = 0; }
+  else if (ch === 'sv' && toggleReturn.checked) { valSv = 90; }
+
+  updateLever(ch);
+  // Final send – NOT throttled; must be delivered
+  clearTimeout(throttleTimer);
+  sendCurrent(true);
+}
+
+function applyDrag(ch, clientY) {
+  const raw = getValueFromY(ch, clientY);
+  if (ch === 'm1') { valM1 = clamp(raw, -255, 255); }
+  else if (ch === 'm2') { valM2 = clamp(raw, -255, 255); }
+  else { valSv = clamp(raw, 0, 180); }
+  updateLever(ch);
+  throttledSend();
+}
+
+// Attach to tracks
+function setupDrag() {
+  Object.keys(tracks).forEach(ch => {
+    const el = tracks[ch].track;
+    el.addEventListener('pointerdown', onPointerDown);
+    el.addEventListener('pointermove', onPointerMove);
+    el.addEventListener('pointerup',   onPointerUp);
+    el.addEventListener('pointercancel', onPointerUp);
+  });
+}
+
+// =====================================================================
+//  BLE CONNECTION
+// =====================================================================
+function setStatus(state) {
+  if (state === 'connected') {
+    isConnected = true;
+    statusDot.className  = 'connected';
+    statusText.textContent = '接続中';
+    btnConnect.textContent = '切断';
+    btnConnect.classList.add('connected');
+    document.getElementById('app').classList.remove('scanning');
+  } else if (state === 'scanning') {
+    statusDot.className  = '';
+    statusText.textContent = 'スキャン中';
+    btnConnect.textContent = '接続中…';
+    btnConnect.classList.remove('connected');
+    document.getElementById('app').classList.add('scanning');
+  } else {
+    isConnected = false;
+    statusDot.className  = '';
+    statusText.textContent = '未接続';
+    btnConnect.textContent = '接続';
+    btnConnect.classList.remove('connected');
+    document.getElementById('app').classList.remove('scanning');
+    rxChar = null;
+    lastSentEl.textContent = '— 送信待機中 —';
+  }
+}
+
+async function connect() {
+  if (!navigator.bluetooth) {
+    showToast('このブラウザはWeb Bluetoothに対応していません');
+    return;
+  }
+
+  setStatus('scanning');
+  try {
+    bleDevice = await navigator.bluetooth.requestDevice({
+      filters: [{ name: DEVICE_NAME }],
+      optionalServices: [SERVICE_UUID],
+    });
+
+    bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+    bleServer = await bleDevice.gatt.connect();
+    const service = await bleServer.getPrimaryService(SERVICE_UUID);
+    rxChar = await service.getCharacteristic(RX_CHAR_UUID);
+
+    setStatus('connected');
+    showToast('✓ BLE接続しました');
+    sendCurrent(true);
+  } catch (e) {
+    setStatus('disconnected');
+    if (e.name !== 'NotFoundError') {
+      showToast('接続エラー: ' + e.message);
+      console.error(e);
+    }
+  }
+}
+
+async function disconnect() {
+  if (bleDevice && bleDevice.gatt.connected) {
+    // Send stop before disconnecting
+    valM1 = 0; valM2 = 0; valSv = 90;
+    updateAll();
+    try { await sendCommand(`0,0,90\n`, true); } catch(_) {}
+    bleDevice.gatt.disconnect();
+  }
+}
+
+function onDisconnected() {
+  setStatus('disconnected');
+  showToast('BLE接続が切断されました');
+}
+
+btnConnect.addEventListener('click', () => {
+  if (isConnected) {
+    disconnect();
+  } else {
+    connect();
+  }
+});
+
+// =====================================================================
+//  EMERGENCY STOP
+// =====================================================================
+function emergencyStop() {
+  valM1 = 0; valM2 = 0; valSv = 90;
+  updateAll();
+  clearTimeout(throttleTimer);
+  sendCommand('0,0,90\n', true);
+  showToast('⛔ 緊急停止');
+}
+
+btnEstop.addEventListener('click', emergencyStop);
+
+// =====================================================================
+//  SERVO RESET + TOGGLE
+// =====================================================================
+btnServoReset.addEventListener('click', () => {
+  valSv = 90;
+  updateLever('sv');
+  clearTimeout(throttleTimer);
+  sendCurrent(true);
+});
+
+// =====================================================================
+//  VISIBILITY CHANGE  (fail-safe)
+// =====================================================================
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && isConnected) {
+    valM1 = 0; valM2 = 0;
+    updateLever('m1');
+    updateLever('m2');
+    clearTimeout(throttleTimer);
+    sendCommand(buildCmd(), true);
+  }
+});
+
+// =====================================================================
+//  HELPERS
+// =====================================================================
+function updateAll() {
+  updateLever('m1');
+  updateLever('m2');
+  updateLever('sv');
+}
+
+// =====================================================================
+//  INIT
+// =====================================================================
+function init() {
+  buildTicks('m1');
+  buildTicks('m2');
+  buildTicks('sv');
+  setupDrag();
+
+  // Initial render after layout
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      updateAll();
+    });
+  });
+
+  // Re-render on resize
+  window.addEventListener('resize', () => updateAll());
+}
+
+window.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
