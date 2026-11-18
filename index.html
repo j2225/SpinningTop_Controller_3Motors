@@ -162,6 +162,35 @@
       box-shadow: 0 0 16px var(--glow-red);
     }
 
+    /* All-devices scan button */
+    #btn-scan-all {
+      padding: 5px 10px;
+      border-radius: 20px;
+      border: 1.5px solid var(--text-muted);
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+      display: none;
+    }
+
+    #btn-scan-all:hover {
+      border-color: var(--accent-cyan);
+      color: var(--accent-cyan);
+      box-shadow: 0 0 10px rgba(0,212,255,0.2);
+    }
+
+    /* Show scan-all button only when disconnected */
+    body:not(.ble-connected) #btn-scan-all {
+      display: inline-block;
+    }
+    body.ble-connected #btn-scan-all {
+      display: none;
+    }
+
     /* ===================== LEVERS AREA ===================== */
     #levers-area {
       flex: 1;
@@ -558,7 +587,10 @@
       <div id="status-dot"></div>
       <span id="status-text">未接続</span>
     </div>
-    <button id="btn-connect">接続</button>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <button id="btn-scan-all" title="全Bluetoothデバイスを表示">全デバイス</button>
+      <button id="btn-connect">接続</button>
+    </div>
   </header>
 
   <!-- ===== LEVERS ===== -->
@@ -940,7 +972,7 @@ function setStatus(state) {
   }
 }
 
-async function connect() {
+async function connect(scanAll = false) {
   if (!navigator.bluetooth) {
     showToast('このブラウザはWeb Bluetoothに対応していません');
     return;
@@ -948,11 +980,23 @@ async function connect() {
 
   setStatus('scanning');
   try {
-    bleDevice = await navigator.bluetooth.requestDevice({
-      filters: [{ name: DEVICE_NAME }],
-      optionalServices: [SERVICE_UUID],
-    });
+    let requestOptions;
 
+    if (scanAll) {
+      // モード3: 全デバイス表示（フィルターなし）
+      requestOptions = {
+        acceptAllDevices: true,
+        optionalServices: [SERVICE_UUID],
+      };
+    } else {
+      // モード1: サービスUUID でフィルター（最も確実）
+      requestOptions = {
+        filters: [{ services: [SERVICE_UUID] }],
+        optionalServices: [SERVICE_UUID],
+      };
+    }
+
+    bleDevice = await navigator.bluetooth.requestDevice(requestOptions);
     bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
 
     bleServer = await bleDevice.gatt.connect();
@@ -960,20 +1004,29 @@ async function connect() {
     rxChar = await service.getCharacteristic(RX_CHAR_UUID);
 
     setStatus('connected');
-    showToast('✓ BLE接続しました');
+    document.body.classList.add('ble-connected');
+    showToast('✓ BLE接続しました: ' + (bleDevice.name || '不明'));
     sendCurrent(true);
   } catch (e) {
     setStatus('disconnected');
-    if (e.name !== 'NotFoundError') {
-      showToast('接続エラー: ' + e.message);
+    document.body.classList.remove('ble-connected');
+    if (e.name === 'NotFoundError') {
+      // ユーザーがキャンセルした場合は何もしない
+    } else if (e.name === 'NotSupportedError' || e.message.includes('no service')) {
+      // サービスが見つからない → 全デバイス表示を促す
+      showToast('デバイスは見つかりましたがサービス未対応。「全デバイス」で再試行を', 4000);
+    } else {
+      showToast('接続エラー: ' + e.message, 4000);
       console.error(e);
     }
   }
 }
 
+// 全デバイス表示ボタン
+document.getElementById('btn-scan-all').addEventListener('click', () => connect(true));
+
 async function disconnect() {
   if (bleDevice && bleDevice.gatt.connected) {
-    // Send stop before disconnecting
     valM1 = 0; valM2 = 0; valSv = 90;
     updateAll();
     try { await sendCommand(`0,0,90\n`, true); } catch(_) {}
@@ -983,6 +1036,7 @@ async function disconnect() {
 
 function onDisconnected() {
   setStatus('disconnected');
+  document.body.classList.remove('ble-connected');
   showToast('BLE接続が切断されました');
 }
 
